@@ -1,0 +1,238 @@
+@host = http://localhost:5190
+
+# Сначала выполните POST createOrder из шага 1 и дождитесь 201 Created.
+# Остальные запросы берут id из последнего ответа createOrder автоматически.
+# Выполняйте шаги по порядку; повторный POST создаст новый заказ для следующих шагов.
+
+# Измените период, если хотите найти заказы за другие даты.
+# Границы включительные; dateTo — точный момент времени.
+@dateFrom = 2026-09-01T00:00:00Z
+@dateTo = 2026-10-01T00:00:00Z
+
+### 1. Создать заказ — 201 Created, тело { "id": "..." }, заголовок Location
+# Ожидаемые значения при последующем чтении: New, totalAmount = 3501, две позиции.
+# @name createOrder
+POST {{host}}/orders
+Content-Type: application/json
+Accept: application/json
+
+{
+  "customerName": "Иван Иванов",
+  "items": [
+    {
+      "productName": "Клавиатура",
+      "quantity": 2,
+      "price": 1500.50
+    },
+    {
+      "productName": "Мышь",
+      "quantity": 1,
+      "price": 500
+    }
+  ]
+}
+
+### 2. Получить созданный заказ с позициями — 200 OK
+GET {{host}}/orders/{{createOrder.response.body.$.id}}
+Accept: application/json
+
+### 3. Получить все заказы — 200 OK
+GET {{host}}/orders
+Accept: application/json
+
+### 4. Фильтр по статусу — 200 OK; созданный заказ пока находится в New
+GET {{host}}/orders?status=New
+Accept: application/json
+
+### 5. Фильтр по периоду — 200 OK
+GET {{host}}/orders?dateFrom={{dateFrom}}&dateTo={{dateTo}}
+Accept: application/json
+
+### 6. Статус и период одновременно — 200 OK
+GET {{host}}/orders?status=New&dateFrom={{dateFrom}}&dateTo={{dateTo}}
+Accept: application/json
+
+### 7. Только нижняя граница даты — 200 OK
+GET {{host}}/orders?dateFrom={{dateFrom}}
+Accept: application/json
+
+### 8. Только верхняя граница даты — 200 OK
+GET {{host}}/orders?dateTo={{dateTo}}
+Accept: application/json
+
+### 9. Запрещённый переход New -> Completed — 409 Conflict; статус останется New
+# Выполните до шага 10.
+PUT {{host}}/orders/{{createOrder.response.body.$.id}}/status
+Content-Type: application/json
+
+{
+  "status": "Completed"
+}
+
+### 10. Оплатить заказ: New -> Paid — 204 No Content
+PUT {{host}}/orders/{{createOrder.response.body.$.id}}/status
+Content-Type: application/json
+
+{
+  "status": "Paid"
+}
+
+### 11. Проверить статус Paid — 200 OK
+GET {{host}}/orders/{{createOrder.response.body.$.id}}
+Accept: application/json
+
+### 12. Повторная установка Paid — 409 Conflict
+PUT {{host}}/orders/{{createOrder.response.body.$.id}}/status
+Content-Type: application/json
+
+{
+  "status": "Paid"
+}
+
+### 13. Отправить заказ: Paid -> Shipped — 204 No Content
+PUT {{host}}/orders/{{createOrder.response.body.$.id}}/status
+Content-Type: application/json
+
+{
+  "status": "Shipped"
+}
+
+### 14. Завершить заказ: Shipped -> Completed — 204 No Content
+PUT {{host}}/orders/{{createOrder.response.body.$.id}}/status
+Content-Type: application/json
+
+{
+  "status": "Completed"
+}
+
+### 15. Проверить итоговый статус Completed и сумму 3501 — 200 OK
+GET {{host}}/orders/{{createOrder.response.body.$.id}}
+Accept: application/json
+
+### 16. Обратный переход Completed -> Paid — 409 Conflict
+PUT {{host}}/orders/{{createOrder.response.body.$.id}}/status
+Content-Type: application/json
+
+{
+  "status": "Paid"
+}
+
+### 17. Неизвестный статус в JSON — 400 Bad Request
+PUT {{host}}/orders/{{createOrder.response.body.$.id}}/status
+Content-Type: application/json
+
+{
+  "status": "Unknown"
+}
+
+### 18. Числовой статус в JSON запрещён — 400 Bad Request
+PUT {{host}}/orders/{{createOrder.response.body.$.id}}/status
+Content-Type: application/json
+
+{
+  "status": 1
+}
+
+### 19. Отсутствует обязательное поле status — 400 Bad Request
+PUT {{host}}/orders/{{createOrder.response.body.$.id}}/status
+Content-Type: application/json
+
+{}
+
+### 20. Пустое имя заказчика — 400 Bad Request
+POST {{host}}/orders
+Content-Type: application/json
+
+{
+  "customerName": " ",
+  "items": [
+    { "productName": "Товар", "quantity": 1, "price": 100 }
+  ]
+}
+
+### 21. Пустой список позиций — 400 Bad Request
+POST {{host}}/orders
+Content-Type: application/json
+
+{
+  "customerName": "Иван Иванов",
+  "items": []
+}
+
+### 22. Нулевое количество — 400 Bad Request
+POST {{host}}/orders
+Content-Type: application/json
+
+{
+  "customerName": "Иван Иванов",
+  "items": [
+    { "productName": "Товар", "quantity": 0, "price": 100 }
+  ]
+}
+
+### 23. Отрицательная цена — 400 Bad Request
+POST {{host}}/orders
+Content-Type: application/json
+
+{
+  "customerName": "Иван Иванов",
+  "items": [
+    { "productName": "Товар", "quantity": 1, "price": -100 }
+  ]
+}
+
+### 24. Пустое название товара — 400 Bad Request
+POST {{host}}/orders
+Content-Type: application/json
+
+{
+  "customerName": "Иван Иванов",
+  "items": [
+    { "productName": " ", "quantity": 1, "price": 100 }
+  ]
+}
+
+### 25. Null вместо позиции — 400 Bad Request
+POST {{host}}/orders
+Content-Type: application/json
+
+{
+  "customerName": "Иван Иванов",
+  "items": [null]
+}
+
+### 26. Неизвестный статус в фильтре — 400 Bad Request
+GET {{host}}/orders?status=Unknown
+Accept: application/json
+
+### 27. Несуществующее числовое значение статуса — 400 Bad Request
+GET {{host}}/orders?status=999
+Accept: application/json
+
+### 28. Начало периода позже окончания — 400 Bad Request
+GET {{host}}/orders?dateFrom=2026-10-01T00:00:00Z&dateTo=2026-09-01T00:00:00Z
+Accept: application/json
+
+### 29. Некорректный формат даты — 400 Bad Request
+GET {{host}}/orders?dateFrom=not-a-date
+Accept: application/json
+
+### 30. Удалить только созданный тестовый заказ — 204 No Content
+# Выполняйте после остальных проверок этого заказа.
+DELETE {{host}}/orders/{{createOrder.response.body.$.id}}
+
+### 31. Получить удалённый заказ — 404 Not Found
+GET {{host}}/orders/{{createOrder.response.body.$.id}}
+Accept: application/json
+
+### 32. Изменить статус удалённого заказа — 404 Not Found
+PUT {{host}}/orders/{{createOrder.response.body.$.id}}/status
+Content-Type: application/json
+
+{
+  "status": "Paid"
+}
+
+### 33. Повторно удалить заказ — 404 Not Found
+DELETE {{host}}/orders/{{createOrder.response.body.$.id}}
+
