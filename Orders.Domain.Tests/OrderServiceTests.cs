@@ -13,6 +13,7 @@ public class OrderServiceTests
     private readonly TestRepository _repository = new();
     private OrderService Service => new(_repository, NullLogger<OrderService>.Instance);
 
+    // Созданный заказ доступен для чтения с рассчитанной суммой и сохраняется один раз.
     [Fact]
     public async Task CreateAndRead_ReturnsItemsAndCalculatedTotal()
     {
@@ -32,11 +33,13 @@ public class OrderServiceTests
     [Fact]
     public async Task InvalidTransition_DoesNotSave()
     {
+        // Нельзя пропустить оплату: неудачный переход не меняет заказ и не вызывает сохранение.
         _repository.Order = new("Customer", new() { new("A", 1, 10m) });
         await Assert.ThrowsAsync<DomainRuleException>(() =>
             Service.ChangeStatusAsync(_repository.Order.Id, new(OrderStatus.Completed), default));
         Assert.Equal(0, _repository.SaveCount);
         Assert.Equal(OrderStatus.New, _repository.Order.Status);
+        // После отказа допустимый переход по-прежнему выполняется и сохраняется.
         await Service.ChangeStatusAsync(_repository.Order.Id, new(OrderStatus.Paid), default);
         Assert.Equal(OrderStatus.Paid, _repository.Order.Status);
         Assert.Equal(1, _repository.SaveCount);
@@ -45,6 +48,7 @@ public class OrderServiceTests
     [Fact]
     public async Task MissingOrder_ThrowsForReadUpdateAndDelete()
     {
+        // Чтение, смена статуса и удаление одинаково сообщают об отсутствии заказа.
         var id = Guid.NewGuid();
         await Assert.ThrowsAsync<KeyNotFoundException>(() => Service.GetByIdAsync(id, default));
         await Assert.ThrowsAsync<KeyNotFoundException>(() => Service.ChangeStatusAsync(id, new(OrderStatus.Paid), default));
@@ -54,6 +58,7 @@ public class OrderServiceTests
     [Fact]
     public async Task Delete_RemovesOrderAndSaves()
     {
+        // Удаление убирает заказ из репозитория и сохраняет изменение ровно один раз.
         _repository.Order = new("Customer", new() { new("A", 1, 10m) });
         await Service.DeleteAsync(_repository.Order.Id, default);
         Assert.Null(_repository.Order);
@@ -63,11 +68,13 @@ public class OrderServiceTests
     [Fact]
     public async Task InvalidFilters_AreRejected()
     {
+        // Отклоняем обратный диапазон дат и значение, отсутствующее в перечислении статусов.
         var now = DateTimeOffset.UtcNow;
         await Assert.ThrowsAsync<ArgumentException>(() => Service.GetAsync(null, now, now.AddDays(-1), default));
         await Assert.ThrowsAsync<ArgumentException>(() => Service.GetAsync((OrderStatus)99, null, null, default));
     }
 
+    // Репозиторий в памяти изолирует тесты сервиса от БД и учитывает вызовы сохранения.
     private sealed class TestRepository : IOrderRepository
     {
         public Order? Order { get; set; }

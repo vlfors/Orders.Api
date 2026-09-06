@@ -6,6 +6,7 @@ namespace Orders.Domain.Tests;
 
 public class OrderTests
 {
+    // При создании заказ получает идентификатор, начальный статус и сумму всех позиций.
     [Fact]
     public void Creation_CalculatesTotalAndSetsDefaults()
     {
@@ -18,10 +19,12 @@ public class OrderTests
         Assert.Equal(OrderStatus.New, order.Status);
         Assert.InRange(order.CreatedAt, before, DateTimeOffset.UtcNow);
         Assert.All(order.Items, item => Assert.Equal(order.Id, item.OrderId));
+        // Заказ хранит собственную коллекцию: очистка исходного списка не удаляет позиции.
         items.Clear();
         Assert.Equal(2, order.Items.Count);
     }
 
+    // Перебираем все пары статусов, чтобы проверить разрешённые и запрещённые переходы.
     public static IEnumerable<object[]> Transitions()
     {
         foreach (var from in Enum.GetValues<OrderStatus>())
@@ -29,11 +32,13 @@ public class OrderTests
             yield return new object[] { from, to };
     }
 
+    // Разрешён только следующий шаг; ошибка перехода не должна менять текущий статус.
     [Theory]
     [MemberData(nameof(Transitions))]
     public void ChangeStatus_OnlyAllowsNextStep(OrderStatus from, OrderStatus to)
     {
         var order = new Order("Customer", new() { new("A", 1, 10m) });
+        // Доводим заказ до исходного статуса через допустимые промежуточные шаги.
         for (var step = 1; step <= (int)from; step++)
             order.ChangeStatus((OrderStatus)step);
 
@@ -50,6 +55,7 @@ public class OrderTests
     }
 
     [Theory]
+    // Пустое название, неположительное количество и отрицательная цена недопустимы.
     [InlineData("", 1, 1)]
     [InlineData(" ", 1, 1)]
     [InlineData("A", 0, 1)]
@@ -61,8 +67,10 @@ public class OrderTests
     [Fact]
     public void InvalidOrders_AreRejected()
     {
+        // Нельзя создать заказ без имени покупателя или без позиций.
         Assert.Throws<ArgumentException>(() => new Order(" ", new() { new("A", 1, 0m) }));
         Assert.Throws<ArgumentException>(() => new Order("Customer", new()));
+        // Один экземпляр позиции нельзя добавить дважды или привязать к двум заказам.
         var item = new OrderItem("A", 1, 1m);
         Assert.Throws<ArgumentException>(() => new Order("Customer", new() { item, item }));
         _ = new Order("First", new() { item });
